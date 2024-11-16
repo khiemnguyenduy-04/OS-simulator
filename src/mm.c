@@ -94,7 +94,7 @@ int vmap_page_range(struct pcb_t *caller, // process call
   // TODO: update the rg_end and rg_start of ret_rg 
   ret_rg->rg_end =  addr;
   ret_rg->rg_start = addr + (pgnum * PAGING_PAGESZ)-1;
-  ret_rg->vmaid = pgn + pgit 
+  ret_rg->vmaid = caller->mm->mmap->vm_id;
 
 
   //fpit->fp_next = frames;
@@ -106,18 +106,18 @@ int vmap_page_range(struct pcb_t *caller, // process call
    /* Tracking for later page replacement activities (if needed)
     * Enqueue new usage page */
    for (pgit = 0; pgit < pgnum; pgit++) {
-        int fpn = frames->fpn;
+        // Get the current frame
+        fpit = fpit->fp_next;
+        if (!fpit) break; // Stop if frames are exhausted
 
-        // Map frame (fpn) to page table entry in the page directory
-        uint32_t *pte = &(caller->mm->pgd[pgn + pgit]);
-        pte_set_fpn(pte, fpn);
+        // Update the page table for this page
+        uint32_t *pte = &caller->mm->pgd[pgn + pgit];
+        pte_set_fpn(pte, fpit->fpn);
 
-        frames = frames->fp_next;
+        // Track this page in the FIFO
+        enlist_pgn_node(&caller->mm->fifo_pgn, pgn + pgit);
     }
    
-   enlist_pgn_node(&caller->mm->fifo_pgn, pgn+pgit);
-
-
   return 0;
 }
 
@@ -139,16 +139,10 @@ int alloc_pages_range(struct pcb_t *caller, int req_pgnum, struct framephy_struc
   //frm_lst-> ...
   */
   for(pgit = 0; pgit < req_pgnum; pgit++) {
-        // Check if there are free frames in RAM
         if (MEMPHY_get_freefp(caller->mram, &fpn) == 0) {
-            // Allocate the frame, add to the list of frames
-            newfp_str = malloc(sizeof(struct framephy_struct));
-            newfp_str->fpn = fpn;
-            newfp_str->fp_next = *frm_lst;
-            *frm_lst = newfp_str;
+           
         } else {
-            // Handle the error when not enough frames are available
-            return -1; // Not enough frames available
+           
         }
     }
 
@@ -245,7 +239,7 @@ int init_mm(struct mm_struct *mm, struct pcb_t *caller)
   /* TODO update VMA0 next */
   // vma0->next = ...
 vma0->vm_next = vma1;
-vma->vm_next = NULL;
+vma1->vm_next = NULL;
   /* TODO: update one vma for HEAP */
   // vma1->vm_id = ...
   // vma1->vm_start = ...
