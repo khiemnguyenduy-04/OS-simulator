@@ -5,8 +5,8 @@
 #include <stdio.h>
 
 int main() {
-	struct pcb_t * ld = load("input/p0");
-	struct pcb_t * proc = load("input/p0");
+	struct pcb_t * ld = load("input/proc/m0s");
+	struct pcb_t * proc = load("input/proc/m1s");
 	unsigned int i;
 	for (i = 0; i < proc->code->size; i++) {
 		run(proc);

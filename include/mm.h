@@ -93,10 +93,10 @@
 #define PAGING_FPN(x)  GETVAL(x,PAGING_FPN_MASK,PAGING_ADDR_FPN_LOBIT)
 
 /* Memory range operator */
-/* TODO implement the INCLUDE checking mechanism - currently dummy op only */
-#define INCLUDE(x1,x2,y1,y2) (0)
-/* TODO implement the OVERLAP checking mechanism - currently dummy op only */
-#define OVERLAP(x1,x2,y1,y2) (1)
+/* TODO implement the INCLUDE checking mechanism - previously dummy op only - currently done */
+#define INCLUDE(x1,x2,y1,y2) ((x1 <= y1) && (x2 >= y2) || (y1 <= x1) && (y2 >= x2))
+/* TODO implement the OVERLAP checking mechanism - previously dummy op only - currently done*/
+#define OVERLAP(x1,x2,y1,y2) (!(x2 < y1 || y2 < x1))
 
 /* VM region prototypes */
 struct vm_rg_struct * init_vm_rg(int rg_start, int rg_endi, int vmaid);
