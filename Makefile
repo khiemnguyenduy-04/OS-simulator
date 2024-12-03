@@ -27,7 +27,7 @@ all: os
 
 # Just compile memory management modules
 mem: $(MEM_OBJ)
-	$(MAKE) $(LFLAGS) $(MEM_OBJ) -o mem $(LIB)
+	$(MAKE) $(LFLAGS) $(MEM_OBJ) -o mem $(LIB) $(DEBUG)
 
 # Just compile scheduler
 sched: $(SCHED_OBJ)

@@ -79,6 +79,7 @@ struct vm_rg_struct *get_symrg_byid(struct mm_struct *mm, int rgid)
  */
 int __alloc(struct pcb_t *caller, int vmaid, int rgid, int size, int *alloc_addr)
 {
+  printf("allocating %d bytes\n", size);
   /*Allocate at the toproof */
   struct vm_rg_struct rgnode;
 
@@ -116,10 +117,20 @@ int __alloc(struct pcb_t *caller, int vmaid, int rgid, int size, int *alloc_addr
   inc_vma_limit(caller, vmaid, inc_sz, &inc_limit_ret);
 
   /* TODO: commit the limit increment */
-  
-  /* TODO: commit the allocation address 
-  // *alloc_addr = ...
-  */
+  if (vmaid == 0)
+  {
+    caller->mm->symrgtbl[rgid].rg_start = old_sbrk;
+    caller->mm->symrgtbl[rgid].rg_end = old_sbrk + size;
+  }
+  else if (vmaid == 1)
+  {
+    caller->mm->symrgtbl[rgid].rg_start = old_sbrk;
+    caller->mm->symrgtbl[rgid].rg_end = old_sbrk - size;
+  }
+  /* TODO: commit the allocation address */
+  *alloc_addr = caller->mm->symrgtbl[rgid].rg_start;
+
+  printf("allocated %d bytes\n", size);
 
   return 0;
 }
@@ -417,8 +428,21 @@ struct vm_rg_struct* get_vm_area_node_at_brk(struct pcb_t *caller, int vmaid, in
   newrg = malloc(sizeof(struct vm_rg_struct));
 
   /* TODO: update the newrg boundary */
-  newrg->rg_start = cur_vma->sbrk;
-  newrg->rg_end = cur_vma->sbrk + alignedsz;
+  if (vmaid == 0)
+  {
+    newrg->rg_start = cur_vma->sbrk;
+    newrg->rg_end = cur_vma->sbrk + alignedsz;
+  }
+  else if (vmaid == 1)
+  {
+    newrg->rg_start = cur_vma->sbrk;
+    newrg->rg_end = cur_vma->sbrk - alignedsz;
+  }
+  else
+  {
+    newrg->rg_start = newrg->rg_end = -1;
+  }
+
   return newrg;
 }
 
@@ -431,20 +455,32 @@ struct vm_rg_struct* get_vm_area_node_at_brk(struct pcb_t *caller, int vmaid, in
  */
 int validate_overlap_vm_area(struct pcb_t *caller, int vmaid, int vmastart, int vmaend)
 {
-  struct vm_area_struct *vma = caller->mm->mmap;
+  struct vm_area_struct *vma;
 
   /* TODO validate the planned memory area is not overlapped */
   
   // get vmaid need to validate
-  struct  vm_area_struct *cur_vma = get_vma_by_num(caller->mm, vmaid);
-  if (cur_vma == NULL)
-    return -1;
+  // struct  vm_area_struct *cur_vma = get_vma_by_num(caller->mm, vmaid);
+  // if (cur_vma == NULL)
+  //   return -1;
   
-  while (vma != NULL)
+  // while (vma != NULL)
+  // {
+  //   if (OVERLAP(vma->vm_start, vma->vm_end, vmastart, vmaend))
+  //     return -1; /* Overlap and failed allocation */
+  //   vma = vma -> vm_next;
+  // }
+  if (vmaid == 0)
   {
-    if (OVERLAP(vma->vm_start, vma->vm_end, vmastart, vmaend))
+    vma = get_vma_by_num(caller->mm, 1);
+    if (OVERLAP(vmastart, vmaend, vma->sbrk, vma->vm_start) || vma == NULL)
       return -1; /* Overlap and failed allocation */
-    vma = vma -> vm_next;
+  }
+  else if (vmaid == 1)
+  {
+    vma = get_vma_by_num(caller->mm, 0);
+    if (OVERLAP(vma->vm_start, vma->sbrk, vmaend, vmastart) || vma == NULL)
+      return -1; /* Overlap and failed allocation */
   }
 
   return 0;
@@ -472,10 +508,21 @@ int inc_vma_limit(struct pcb_t *caller, int vmaid, int inc_sz, int* inc_limit_re
     return -1; /*Overlap and failed allocation */
 
   /* TODO: Obtain the new vm area based on vmaid */
-  cur_vma->vm_end += inc_amt;
-  inc_limit_ret = inc_amt;
+  if (vmaid == 0)
+  {
+    cur_vma->sbrk += inc_amt;
+  }
+  else if (vmaid == 1)
+  { 
+    cur_vma->sbrk -= inc_amt;
+  }
+  else
+  {
+    return -1;
+  }
+  *inc_limit_ret = inc_amt;
 
-  if (vm_map_ram(caller, area->rg_start, area->rg_end, 
+  if (vm_map_ram(caller, vmaid ,area->rg_start, area->rg_end, 
                     old_end, incnumpage , newrg) < 0)
     return -1; /* Map the memory to MEMRAM */
 
@@ -533,45 +580,88 @@ int get_free_vmrg_area(struct pcb_t *caller, int vmaid, int size, struct vm_rg_s
   /* Traverse on list of free vm region to find a fit space */
   while (rgit != NULL && rgit->vmaid == vmaid)
   {
-    if (rgit->rg_start + size <= rgit->rg_end)
-    { /* Current region has enough space */
-      newrg->rg_start = rgit->rg_start;
-      newrg->rg_end = rgit->rg_start + size;
+    if (vmaid == 0) // data segment
+    { 
+      if (rgit->rg_start + size <= rgit->rg_end)
+      { /* Current region has enough space */
+        newrg->rg_start = rgit->rg_start;
+        newrg->rg_end = rgit->rg_start + size;
 
-      /* Update left space in chosen region */
-      if (rgit->rg_start + size < rgit->rg_end)
-      {
-        rgit->rg_start = rgit->rg_start + size;
-      }
-      else
-      { /*Use up all space, remove current node */
-        /*Clone next rg node */
-        struct vm_rg_struct *nextrg = rgit->rg_next;
-
-        /*Cloning */
-        if (nextrg != NULL)
+        /* Update left space in chosen region */
+        if (rgit->rg_start + size < rgit->rg_end)
         {
-          rgit->rg_start = nextrg->rg_start;
-          rgit->rg_end = nextrg->rg_end;
-
-          rgit->rg_next = nextrg->rg_next;
-
-          free(nextrg);
+          rgit->rg_start = rgit->rg_start + size;
         }
         else
-        { /*End of free list */
-          rgit->rg_start = rgit->rg_end;	//dummy, size 0 region
-          rgit->rg_next = NULL;
+        { /*Use up all space, remove current node */
+          /*Clone next rg node */
+          struct vm_rg_struct *nextrg = rgit->rg_next;
+
+          /*Cloning */
+          if (nextrg != NULL)
+          {
+            rgit->rg_start = nextrg->rg_start;
+            rgit->rg_end = nextrg->rg_end;
+
+            rgit->rg_next = nextrg->rg_next;
+
+            free(nextrg);
+          }
+          else
+          { /*End of free list */
+            rgit->rg_start = rgit->rg_end;	//dummy, size 0 region
+            rgit->rg_next = NULL;
+          }
         }
       }
+      else
+      {
+        rgit = rgit->rg_next;	// Traverse next rg
+      }
     }
-    else
+    else if (vmaid == 1) //heap segment
     {
-      rgit = rgit->rg_next;	// Traverse next rg
-    }
-  }
+      if (rgit->rg_start - size >= rgit->rg_end)
+      { /* Current region has enough space */
+        newrg->rg_start = rgit->rg_start;
+        newrg->rg_end = rgit->rg_start - size;
 
- if(newrg->rg_start == -1) // new region not found
+        /* Update left space in chosen region */
+        if (rgit->rg_start - size > rgit->rg_end)
+        {
+          rgit->rg_start = rgit->rg_start - size;
+        }
+        else
+        { /*Use up all space, remove current node */
+          /*Clone next rg node */
+          struct vm_rg_struct *nextrg = rgit->rg_next;
+
+          /*Cloning */
+          if (nextrg != NULL)
+          {
+            rgit->rg_start = nextrg->rg_start;
+            rgit->rg_end = nextrg->rg_end;
+
+            rgit->rg_next = nextrg->rg_next;
+
+            free(nextrg);
+          }
+          else
+          { /*End of free list */
+            rgit->rg_start = rgit->rg_end;	//dummy, size 0 region
+            rgit->rg_next = NULL;
+          }
+        }
+      }
+      else
+      {
+        rgit = rgit->rg_next;	// Traverse next rg
+      }
+    }
+    else ; // Invalid vmaid                                               
+  }
+    
+  if (newrg->rg_start == -1) // new region not found
    return -1;
 
  return 0;
