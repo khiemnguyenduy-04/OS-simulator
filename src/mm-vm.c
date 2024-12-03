@@ -79,7 +79,7 @@ struct vm_rg_struct *get_symrg_byid(struct mm_struct *mm, int rgid)
  */
 int __alloc(struct pcb_t *caller, int vmaid, int rgid, int size, int *alloc_addr)
 {
-  printf("allocating %d bytes\n", size);
+  printf("allocating %d bytes\n", size); // DEBUG
   /*Allocate at the toproof */
   struct vm_rg_struct rgnode;
 
@@ -130,7 +130,7 @@ int __alloc(struct pcb_t *caller, int vmaid, int rgid, int size, int *alloc_addr
   /* TODO: commit the allocation address */
   *alloc_addr = caller->mm->symrgtbl[rgid].rg_start;
 
-  printf("allocated %d bytes\n", size);
+  printf("allocated %d bytes\n", size); // DEBUG
 
   return 0;
 }
@@ -149,15 +149,29 @@ int __free(struct pcb_t *caller, int rgid)
   // Dummy initialization for avoding compiler dummay warning
   // in incompleted TODO code rgnode will overwrite through implementing
   // the manipulation of rgid later
-  rgnode.vmaid = 0;  //dummy initialization
-  rgnode.vmaid = 1;  //dummy initialization
+  // rgnode.vmaid = 0;  //dummy initialization
+  // rgnode.vmaid = 1;  //dummy initialization
 
   if(rgid < 0 || rgid > PAGING_MAX_SYMTBL_SZ)
     return -1;
 
+  rgnode = *get_symrg_byid(caller->mm, rgid);
+  
   /* TODO: Manage the collect freed region to freerg_list */
   
-
+  int size;
+  int size_alligned;
+  if (rgnode.vmaid == 0){
+    size = rgnode.rg_end - rgnode.rg_start;
+    size_alligned = PAGING_PAGE_ALIGNSZ(size);
+  } else if (rgnode.vmaid == 1){
+    size = rgnode.rg_start - rgnode.rg_end;
+    size_alligned = PAGING_PAGE_ALIGNSZ(size);
+  } else {
+    return -1;
+  }
+  int num_page = size_alligned / PAGING_PAGESZ;
+  int base_pgn = PAGING_PGN(rgnode.rg_start);
   /*enlist the obsoleted memory region */
   enlist_vm_freerg_list(caller->mm, rgnode);
 
