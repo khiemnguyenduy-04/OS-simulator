@@ -140,10 +140,10 @@ int MEMPHY_format(struct memphy_struct *mp, int pagesz)
 int MEMPHY_get_freefp(struct memphy_struct *mp, int *retfpn)
 {
    struct framephy_struct *fp = mp->free_fp_list;
-   printf("MEMPHY_get_freefp\n");  //DEBUG
+   // printf("MEMPHY_get_freefp\n");  //DEBUG
    if (fp == NULL)
    {
-      printf("No free frame available\n");  //DEBUG
+   //   printf("No free frame available\n");  //DEBUG
       return -1;
    }
 

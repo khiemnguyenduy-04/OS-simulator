@@ -89,7 +89,7 @@ int vmap_page_range(struct pcb_t *caller, // process call
   //uint32_t * pte = malloc(sizeof(uint32_t));
   struct framephy_struct *fpit = malloc(sizeof(struct framephy_struct));
   //int  fpn;
-  printf("vmap add: %08x\n", addr); //DEBUG
+  // printf("vmap add: %08x\n", addr); //DEBUG
   int pgit ;
   int pgn = PAGING_PGN(addr);
 
@@ -114,7 +114,7 @@ int vmap_page_range(struct pcb_t *caller, // process call
     if (vmaid == 0)
     {
       pte_set_fpn(&caller->mm->pgd[pgn+pgit], fpit->fpn);
-      printf("vmap_page_range: %08x\n", caller->mm->pgd[pgn+pgit]); //DEBUG
+      // printf("vmap_page_range: %08x\n", caller->mm->pgd[pgn+pgit]); //DEBUG
 
 
     /* Tracking for later page replacement activities (if needed)
@@ -124,7 +124,7 @@ int vmap_page_range(struct pcb_t *caller, // process call
     else if (vmaid == 1)
     {
       pte_set_fpn(&caller->mm->pgd[pgn-pgit], fpit->fpn);
-      printf("vmap_page_range: %08x\n", caller->mm->pgd[pgn-pgit]); //DEBUG
+      // printf("vmap_page_range: %08x\n", caller->mm->pgd[pgn-pgit]); //DEBUG
 
       /* Tracking for later page replacement activities (if needed)
       * Enqueue new usage page */
@@ -160,7 +160,7 @@ int alloc_pages_range(struct pcb_t *caller, int req_pgnum, struct framephy_struc
     newfp_str -> fp_next = NULL;
     if(MEMPHY_get_freefp(caller->mram, &fpn) == 0)
    {
-    printf("alloc_fpn_range: %d\n", fpn); //DEBUG
+    // printf("alloc_fpn_range: %d\n", fpn); //DEBUG
     newfp_str->fpn = fpn;
    } else
     {  // ERROR CODE of obtaining somes but not enough frames
@@ -218,9 +218,9 @@ int vm_map_ram(struct pcb_t *caller, int vmaid, int astart, int aend, int mapsta
 {
   struct framephy_struct *frm_lst = NULL;
   int ret_alloc;
-  printf("vm_map_ram: %d\n", incpgnum); //DEBUG
-  printf("vm_map_ram: %d\n", mapstart); //DEBUG
-  printf("vm_map_ram: %d\n", astart); //DEBUG
+  // printf("vm_map_ram: %d\n", incpgnum); //DEBUG
+  // printf("vm_map_ram: %d\n", mapstart); //DEBUG
+  // printf("vm_map_ram: %d\n", astart); //DEBUG
   /*@bksysnet: author provides a feasible solution of getting frames
    *FATAL logic in here, wrong behaviour if we have not enough page
    *i.e. we request 1000 frames meanwhile our RAM has size of 3 frames
@@ -312,7 +312,7 @@ int init_mm(struct mm_struct *mm, struct pcb_t *caller)
   /* TODO: update mmap */
   mm->mmap = vma0;
   //DEBUG
-  printf("init_mm: %d\n", caller->vmemsz);
+  // printf("init_mm: %d\n", caller->vmemsz);
   return 0;
 }
 
@@ -339,7 +339,7 @@ int enlist_vm_rg_node(struct vm_rg_struct **rglist, struct vm_rg_struct* rgnode)
 int enlist_pgn_node(struct pgn_t **plist, int pgn)
 {
   struct pgn_t* pnode = malloc(sizeof(struct pgn_t));
-  printf("enlist_pgn_node: %d\n", pgn); //DEBUG
+  // printf("enlist_pgn_node: %d\n", pgn); //DEBUG
   pnode->pgn = pgn;
   pnode->pg_next = *plist;
   *plist = pnode;
