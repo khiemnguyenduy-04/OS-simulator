@@ -140,9 +140,14 @@ int MEMPHY_format(struct memphy_struct *mp, int pagesz)
 int MEMPHY_get_freefp(struct memphy_struct *mp, int *retfpn)
 {
    struct framephy_struct *fp = mp->free_fp_list;
-
+   printf("MEMPHY_get_freefp\n");  //DEBUG
    if (fp == NULL)
-     return -1;
+   {
+      printf("No free frame available\n");  //DEBUG
+      return -1;
+   }
+
+     
 
    *retfpn = fp->fpn;
    mp->free_fp_list = fp->fp_next;
@@ -161,7 +166,12 @@ int MEMPHY_dump(struct memphy_struct * mp)
      *     for tracing the memory content
      */
     for (int i = 0; i < mp -> maxsz; i++)
+    {
+      if (i % 32 == 0)
+        printf("\n");
       printf("%d", mp -> storage[i]);
+    }
+      
     return 0;
 }
 
