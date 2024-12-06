@@ -2,7 +2,9 @@
 
 #include "bitops.h"
 #include "common.h"
-
+#include "pthread.h"
+extern pthread_mutex_t ram_lock;
+extern pthread_mutex_t active_swp_lock;
 /* CPU Bus definition */
 #define PAGING_CPU_BUS_WIDTH 22 /* 22bit bus - MAX SPACE 4MB */
 #define PAGING_PAGESZ  256      /* 256B or 8-bits PAGE NUMBER */
@@ -93,18 +95,19 @@
 #define PAGING_FPN(x)  GETVAL(x,PAGING_FPN_MASK,PAGING_ADDR_FPN_LOBIT)
 
 /* Memory range operator */
-/* TODO implement the INCLUDE checking mechanism - currently dummy op only */
-#define INCLUDE(x1,x2,y1,y2) (0)
-/* TODO implement the OVERLAP checking mechanism - currently dummy op only */
-#define OVERLAP(x1,x2,y1,y2) (1)
+/* TODO implement the INCLUDE checking mechanism - previously dummy op only - currently done */
+#define INCLUDE(x1,x2,y1,y2) ((x1 <= y1) && (x2 >= y2) || (y1 <= x1) && (y2 >= x2))
+/* TODO implement the OVERLAP checking mechanism - previously dummy op only - currently done*/
+#define OVERLAP(x1,x2,y1,y2) (!(x2 < y1 || y2 < x1))
 
 /* VM region prototypes */
 struct vm_rg_struct * init_vm_rg(int rg_start, int rg_endi, int vmaid);
 int enlist_vm_rg_node(struct vm_rg_struct **rglist, struct vm_rg_struct* rgnode);
+int enlist_vm_freerg_list(struct mm_struct *mm, struct vm_rg_struct* rg_elmt);
 int enlist_pgn_node(struct pgn_t **pgnlist, int pgn);
-int vmap_page_range(struct pcb_t *caller, int addr, int pgnum, 
+int vmap_page_range(struct pcb_t *caller, int vmaid, int addr, int pgnum, 
                     struct framephy_struct *frames, struct vm_rg_struct *ret_rg);
-int vm_map_ram(struct pcb_t *caller, int astart, int send, int mapstart, int incpgnum, struct vm_rg_struct *ret_rg);
+int vm_map_ram(struct pcb_t *caller, int vmaid, int astart, int asend, int mapstart, int incpgnum, struct vm_rg_struct *ret_rg);
 int alloc_pages_range(struct pcb_t *caller, int incpgnum, struct framephy_struct **frm_lst);
 int __swap_cp_page(struct memphy_struct *mpsrc, int srcfpn,
                 struct memphy_struct *mpdst, int dstfpn) ;
