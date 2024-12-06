@@ -110,7 +110,7 @@ int vmap_page_range(struct pcb_t *caller, int vmaid, int addr, int pgnum,
 int vm_map_ram(struct pcb_t *caller, int vmaid, int astart, int asend, int mapstart, int incpgnum, struct vm_rg_struct *ret_rg);
 int alloc_pages_range(struct pcb_t *caller, int incpgnum, struct framephy_struct **frm_lst);
 int __swap_cp_page(struct memphy_struct *mpsrc, int srcfpn,
-                struct memphy_struct *mpdst, int dstfpn) ;
+                struct memphy_struct *mpdst, int dstfpn, int flag) ;
 int pte_set_fpn(uint32_t *pte, int fpn);
 int pte_set_swap(uint32_t *pte, int swptyp, int swpoff);
 int init_pte(uint32_t *pte,
