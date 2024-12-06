@@ -169,7 +169,6 @@ int alloc_pages_range(struct pcb_t *caller, int req_pgnum, struct framephy_struc
    } 
    else
     {  // ERROR CODE of obtaining somes but not enough frames
-      // printf("SWAP \n"); //DEBUG
       int victim_pgn, swp_fpn;
       pthread_mutex_lock(&active_swp_lock);
       is_free_swap = MEMPHY_get_freefp(caller->active_mswp, &swp_fpn);
@@ -193,13 +192,9 @@ int alloc_pages_range(struct pcb_t *caller, int req_pgnum, struct framephy_struc
         }
       }
       // SWAP the victim page to swap area
-      // printf("SWAP: %d with swpfpn: %d\n", victim_pgn, swp_fpn); //DEBUG
       int victim_fpn = PAGING_PTE_FPN(caller->mm->pgd[victim_pgn]);
-      pthread_mutex_lock(&ram_lock);
-      __swap_cp_page(caller->mram, victim_fpn, caller->active_mswp, swp_fpn);
-      pthread_mutex_unlock(&ram_lock);
+      __swap_cp_page(caller->mram, victim_fpn, caller->active_mswp, swp_fpn,1);
       pte_set_swap(&caller->mm->pgd[victim_pgn], 0, swp_fpn);
-      // printf("ptg: %08x\n", caller->mm->pgd[victim_pgn]); //DEBUG
       newfp_str->fpn = victim_fpn;
     } 
     if (*frm_lst == NULL) 
@@ -232,9 +227,6 @@ int vm_map_ram(struct pcb_t *caller, int vmaid, int astart, int aend, int mapsta
 {
   struct framephy_struct *frm_lst = NULL;
   int ret_alloc;
-  // printf("vm_map_ram: %d\n", incpgnum); //DEBUG
-  // printf("vm_map_ram: %d\n", mapstart); //DEBUG
-  // printf("vm_map_ram: %d\n", astart); //DEBUG
   /*@bksysnet: author provides a feasible solution of getting frames
    *FATAL logic in here, wrong behaviour if we have not enough page
    *i.e. we request 1000 frames meanwhile our RAM has size of 3 frames
@@ -268,9 +260,10 @@ int vm_map_ram(struct pcb_t *caller, int vmaid, int astart, int aend, int mapsta
  * @srcfpn : source physical page number (FPN)
  * @mpdst  : destination memphy
  * @dstfpn : destination physical page number (FPN)
+ * @flag   : set flag if source memphy is ram area
  **/
 int __swap_cp_page(struct memphy_struct *mpsrc, int srcfpn,
-                struct memphy_struct *mpdst, int dstfpn) 
+                struct memphy_struct *mpdst, int dstfpn, int flag) 
 {
   int cellidx;
   int addrsrc,addrdst;
@@ -279,8 +272,29 @@ int __swap_cp_page(struct memphy_struct *mpsrc, int srcfpn,
     addrsrc = srcfpn * PAGING_PAGESZ + cellidx;
     addrdst = dstfpn * PAGING_PAGESZ + cellidx;
     BYTE data;
-    MEMPHY_read(mpsrc, addrsrc, &data);
-    MEMPHY_write(mpdst, addrdst, data);
+    if (flag) // copy from ram to active swap
+    {
+      // mutex ram
+      pthread_mutex_lock(&ram_lock);
+      MEMPHY_read(mpsrc, addrsrc, &data);
+      pthread_mutex_unlock(&ram_lock);
+      // mutex active swap
+      pthread_mutex_lock(&active_swp_lock);
+      MEMPHY_write(mpdst, addrdst, data);
+      pthread_mutex_unlock(&active_swp_lock);
+    }
+    else // copy from active swap to ram
+    {
+      // mutex active swap
+      pthread_mutex_lock(&active_swp_lock);
+      MEMPHY_read(mpsrc, addrsrc, &data);
+      pthread_mutex_unlock(&active_swp_lock);
+      // mutex ram
+      pthread_mutex_lock(&ram_lock);
+      MEMPHY_write(mpdst, addrdst, data);
+      pthread_mutex_unlock(&ram_lock);
+    }
+
   }
 
   return 0;
