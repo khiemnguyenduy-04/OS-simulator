@@ -9,6 +9,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+
+// pthread_mutex_t ram_lock = PTHREAD_MUTEX_INITIALIZER;
+// pthread_mutex_t active_swp_lock = PTHREAD_MUTEX_INITIALIZER;
 /*enlist_vm_freerg_list - add new rg to freerg_list
  *@mm: memory region
  *@rg_elmt: new region
@@ -392,11 +395,11 @@ int pgread(
 #ifdef IODUMP
   printf("read region=%d offset=%d value=%d\n", source, offset, data);
 #ifdef PAGETBL_DUMP
-  print_pgtbl(proc, 0, -1); //print max TBL
+  print_pgtbl(proc, 0, 1024); //print max TBL
 #endif
-  printf("---------------Memphy dump-----------------\n");
-  MEMPHY_dump(proc->mram);
-  printf("\n");
+  // printf("---------------Memphy dump-----------------\n");
+  // MEMPHY_dump(proc->mram);
+  // printf("\n");
 #endif
 
   return val;
@@ -436,11 +439,11 @@ int pgwrite(
   #ifdef IODUMP
     printf("write region=%d offset=%d value=%d\n", destination, offset, data);
   #ifdef PAGETBL_DUMP
-    print_pgtbl(proc, 0, -1); //print max TBL
+    print_pgtbl(proc, 0, 1024); //print max TBL
   #endif
-    printf("---------------Memphy dump-----------------\n");
-    MEMPHY_dump(proc->mram);
-    printf("\n");
+    // printf("---------------Memphy dump-----------------\n");
+    // MEMPHY_dump(proc->mram);
+    // printf("\n");
   #endif
   return __write(proc, destination, offset, data);
 

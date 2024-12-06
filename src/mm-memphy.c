@@ -15,13 +15,14 @@
 int MEMPHY_mv_csr(struct memphy_struct *mp, int offset)
 {
    int numstep = 0;
-
+   // pthread_mutex_lock(&mp->lock);
    mp->cursor = 0;
    while(numstep < offset && numstep < mp->maxsz){
      /* Traverse sequentially */
      mp->cursor = (mp->cursor + 1) % mp->maxsz;
      numstep++;
    }
+   // pthread_mutex_unlock(&mp->lock);
 
    return 0;
 }
@@ -81,7 +82,9 @@ int MEMPHY_seq_write(struct memphy_struct * mp, int addr, BYTE value)
      return -1; /* Not compatible mode for sequential read */
 
    MEMPHY_mv_csr(mp, addr);
+   // pthread_mutex_lock(&mp->lock);
    mp->storage[addr] = value;
+   // pthread_mutex_unlock(&mp->lock);
 
    return 0;
 }
@@ -98,7 +101,11 @@ int MEMPHY_write(struct memphy_struct * mp, int addr, BYTE data)
      return -1;
 
    if (mp->rdmflg)
+   {
+      // pthread_mutex_lock(&mp->lock);
       mp->storage[addr] = data;
+      // pthread_mutex_unlock(&mp->lock);
+   }
    else /* Sequential access device */
       return MEMPHY_seq_write(mp, addr, data);
 
@@ -146,9 +153,7 @@ int MEMPHY_get_freefp(struct memphy_struct *mp, int *retfpn)
    //   printf("No free frame available\n");  //DEBUG
       return -1;
    }
-
-     
-
+   // pthread_mutex_lock(&mp->lock);
    *retfpn = fp->fpn;
    mp->free_fp_list = fp->fp_next;
 
@@ -156,6 +161,7 @@ int MEMPHY_get_freefp(struct memphy_struct *mp, int *retfpn)
     * No garbage collector acting then it not been released
     */
    free(fp);
+   // pthread_mutex_unlock(&mp->lock);
 
    return 0;
 }
@@ -181,9 +187,11 @@ int MEMPHY_put_freefp(struct memphy_struct *mp, int fpn)
    struct framephy_struct *newnode = malloc(sizeof(struct framephy_struct));
 
    /* Create new node with value fpn */
+   // pthread_mutex_lock(&mp->lock);
    newnode->fpn = fpn;
    newnode->fp_next = fp;
    mp->free_fp_list = newnode;
+   // pthread_mutex_unlock(&mp->lock);
 
    return 0;
 }
@@ -196,14 +204,15 @@ int init_memphy(struct memphy_struct *mp, int max_size, int randomflg)
 {
    mp->storage = (BYTE *)malloc(max_size*sizeof(BYTE));
    mp->maxsz = max_size;
-
+   //pthread_mutex_init(&mp->lock, NULL);
+   //pthread_mutex_lock(&mp->lock);
    MEMPHY_format(mp,PAGING_PAGESZ);
 
    mp->rdmflg = (randomflg != 0)?1:0;
 
    if (!mp->rdmflg )   /* Not Ramdom acess device, then it serial device*/
       mp->cursor = 0;
-
+   //pthread_mutex_unlock(&mp->lock);
    return 0;
 }
 
