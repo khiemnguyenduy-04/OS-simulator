@@ -51,7 +51,7 @@ int init_pte(uint32_t *pte,
  */
 int pte_set_swap(uint32_t *pte, int swptyp, int swpoff)
 {
-  SETBIT(*pte, PAGING_PTE_PRESENT_MASK);
+  CLRBIT(*pte, PAGING_PTE_PRESENT_MASK);
   SETBIT(*pte, PAGING_PTE_SWAPPED_MASK);
 
   SETVAL(*pte, swptyp, PAGING_PTE_SWPTYP_MASK, PAGING_PTE_SWPTYP_LOBIT);
@@ -154,20 +154,30 @@ int alloc_pages_range(struct pcb_t *caller, int req_pgnum, struct framephy_struc
   //caller-> ...
   //frm_lst-> ...
   */
+  int is_free_ram;
+  int is_free_swap;
   for(pgit = 0; pgit < req_pgnum; pgit++)
   {
     newfp_str = malloc(sizeof(struct framephy_struct));
     newfp_str -> fp_next = NULL;
-    if(MEMPHY_get_freefp(caller->mram, &fpn) == 0)
+    pthread_mutex_lock(&ram_lock);
+    int is_free_ram = MEMPHY_get_freefp(caller->mram, &fpn);
+    pthread_mutex_unlock(&ram_lock);
+    if(is_free_ram == 0)
    {
-    // printf("alloc_fpn_range: %d\n", fpn); //DEBUG
-    newfp_str->fpn = fpn;
-   } else
+    newfp_str->fpn = fpn;   
+   } 
+   else
     {  // ERROR CODE of obtaining somes but not enough frames
+      // printf("SWAP \n"); //DEBUG
       int victim_pgn, swp_fpn;
-      if (find_victim_page(caller->mm, &victim_pgn) != 0 
-        || MEMPHY_get_freefp(caller->active_mswp, &swp_fpn) != 0)
+      pthread_mutex_lock(&active_swp_lock);
+      is_free_swap = MEMPHY_get_freefp(caller->active_mswp, &swp_fpn);
+      pthread_mutex_unlock(&active_swp_lock);
+      if (find_victim_page(caller->mm, &victim_pgn) != 0 || is_free_swap != 0)
       {
+        printf("out of memory\n"); //DEBUG  
+        
         if (*frm_lst == NULL)
           return -1; // No frame available
         else {
@@ -183,9 +193,13 @@ int alloc_pages_range(struct pcb_t *caller, int req_pgnum, struct framephy_struc
         }
       }
       // SWAP the victim page to swap area
+      // printf("SWAP: %d with swpfpn: %d\n", victim_pgn, swp_fpn); //DEBUG
       int victim_fpn = PAGING_PTE_FPN(caller->mm->pgd[victim_pgn]);
+      pthread_mutex_lock(&ram_lock);
       __swap_cp_page(caller->mram, victim_fpn, caller->active_mswp, swp_fpn);
+      pthread_mutex_unlock(&ram_lock);
       pte_set_swap(&caller->mm->pgd[victim_pgn], 0, swp_fpn);
+      // printf("ptg: %08x\n", caller->mm->pgd[victim_pgn]); //DEBUG
       newfp_str->fpn = victim_fpn;
     } 
     if (*frm_lst == NULL) 
@@ -200,7 +214,7 @@ int alloc_pages_range(struct pcb_t *caller, int req_pgnum, struct framephy_struc
         temp->fp_next = newfp_str;
     }
  }
-
+  
   return 0;
 }
 
@@ -264,7 +278,6 @@ int __swap_cp_page(struct memphy_struct *mpsrc, int srcfpn,
   {
     addrsrc = srcfpn * PAGING_PAGESZ + cellidx;
     addrdst = dstfpn * PAGING_PAGESZ + cellidx;
-
     BYTE data;
     MEMPHY_read(mpsrc, addrsrc, &data);
     MEMPHY_write(mpdst, addrdst, data);

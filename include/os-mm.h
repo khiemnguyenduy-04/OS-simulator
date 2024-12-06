@@ -1,7 +1,7 @@
 #ifndef OSMM_H
 #define OSMM_H
 
-#include <pthread.h>
+// #include <pthread.h>
 // #include <stdint.h>
 #define MM_PAGING
 #define PAGING_MAX_MMSWP 4 /* max number of supported swapped space */
@@ -77,7 +77,7 @@ struct memphy_struct {
    BYTE *storage;
    int maxsz;
    /*lock for synchronization*/
-   pthread_mutex_t lock;
+   // pthread_mutex_t lock;
    /* Sequential device fields */ 
    int rdmflg;
    int cursor;

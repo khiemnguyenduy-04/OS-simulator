@@ -9,9 +9,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-
-// pthread_mutex_t ram_lock = PTHREAD_MUTEX_INITIALIZER;
-// pthread_mutex_t active_swp_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t ram_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t active_swp_lock = PTHREAD_MUTEX_INITIALIZER;
 /*enlist_vm_freerg_list - add new rg to freerg_list
  *@mm: memory region
  *@rg_elmt: new region
@@ -101,7 +100,7 @@ int __alloc(struct pcb_t *caller, int vmaid, int rgid, int size, int *alloc_addr
     caller->mm->symrgtbl[rgid].vmaid = rgnode.vmaid;
 
     *alloc_addr = rgnode.rg_start;
-    // printf("found free region %d-%d\n", rgnode.rg_start, rgnode.rg_end); // DEBUG
+    printf("found free region %d-%d\n", rgnode.rg_start, rgnode.rg_end); // DEBUG
     return 0;
   }
 
@@ -228,7 +227,7 @@ int __free(struct pcb_t *caller, int rgid)
 int pgalloc(struct pcb_t *proc, uint32_t size, uint32_t reg_index)
 {
   int addr;
-  // printf("pgalloc\n"); //DEBUG
+  printf("pgalloc\n"); //DEBUG
   /* By default using vmaid = 0 */
   return __alloc(proc, 0, reg_index, size, &addr);
 }
@@ -241,7 +240,7 @@ int pgalloc(struct pcb_t *proc, uint32_t size, uint32_t reg_index)
 int pgmalloc(struct pcb_t *proc, uint32_t size, uint32_t reg_index)
 {
   int addr;
-  // printf("pgmalloc\n"); //DEBUG
+  printf("pgmalloc\n"); //DEBUG
   /* By default using vmaid = 1 */
   return __alloc(proc, 1, reg_index, size, &addr);
 }
@@ -254,7 +253,7 @@ int pgmalloc(struct pcb_t *proc, uint32_t size, uint32_t reg_index)
 
 int pgfree_data(struct pcb_t *proc, uint32_t reg_index)
 {
-  // printf("pgfree\n"); //DEBUG
+  printf("pgfree\n"); //DEBUG
   return __free(proc, reg_index);
 }
 
@@ -268,13 +267,11 @@ int pgfree_data(struct pcb_t *proc, uint32_t reg_index)
 int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller)
 {
   uint32_t pte = mm->pgd[pgn];
- 
   if (!PAGING_PTE_PAGE_PRESENT(pte))
   { /* Page is not online, make it actively living */
     int vicpgn, swpfpn; 
     int vicfpn;
-    uint32_t vicpte;
-
+    // printf("Page %d is not online\n", pgn); //DEBUG
     int tgtfpn = PAGING_PTE_SWP(pte);//the target frame storing our variable
 
     /* TODO: Play with your paging theory here */
@@ -282,22 +279,21 @@ int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller)
     if (find_victim_page(caller->mm, &vicpgn) == -1)
       return -1;
     vicfpn = PAGING_PTE_FPN(caller->mm->pgd[vicpgn]);
-    /* Get free frame in MEMSWP */
-    if (MEMPHY_get_freefp(caller->active_mswp, &swpfpn) == -1)
-      return -1;  
-    
     /* Do swap frame from MEMRAM to MEMSWP and vice versa*/
     /* Copy victim frame to swap */
-      __swap_cp_page(caller->mram, vicfpn, caller->active_mswp, swpfpn);
+    pthread_mutex_lock(&active_swp_lock);
+    __swap_cp_page(caller->mram, vicfpn, caller->active_mswp, tgtfpn);
+    pthread_mutex_unlock(&active_swp_lock);
     /* Copy target frame from swap to mem */
-      __swap_cp_page(caller->active_mswp, tgtfpn, caller->mram, vicfpn);
-
+    pthread_mutex_lock(&ram_lock);
+    __swap_cp_page(caller->active_mswp, tgtfpn, caller->mram, vicfpn);
+    pthread_mutex_unlock(&ram_lock);
     /* Update page table */
     //pte_set_swap() &mm->pgd;
-    pte_set_swap(&mm->pgd[vicpgn], 0, swpfpn);
+    pte_set_swap(&mm->pgd[vicpgn], 0, tgtfpn);
     /* Update its online status of the target page */
     //pte_set_fpn() & mm->pgd[pgn];
-    pte_set_fpn(&pte, vicfpn);
+    pte_set_fpn(&caller->mm->pgd[pgn], vicfpn);
 
     enlist_pgn_node(&caller->mm->fifo_pgn,pgn);
   }
@@ -324,9 +320,9 @@ int pg_getval(struct mm_struct *mm, int addr, BYTE *data, struct pcb_t *caller)
     return -1; /* invalid page access */
 
   int phyaddr = (fpn << PAGING_ADDR_FPN_LOBIT) + off;
-
+  pthread_mutex_lock(&ram_lock);
   MEMPHY_read(caller->mram,phyaddr, data);
-
+  pthread_mutex_unlock(&ram_lock);
   return 0;
 }
 
@@ -352,9 +348,9 @@ int pg_setval(struct mm_struct *mm, int addr, BYTE value, struct pcb_t *caller)
     return -1; /* invalid page access */
 
   int phyaddr = (fpn << PAGING_ADDR_FPN_LOBIT) + off;
-
+  pthread_mutex_lock(&ram_lock);
   MEMPHY_write(caller->mram,phyaddr, value);
-
+  pthread_mutex_unlock(&ram_lock);
    return 0;
 }
 
@@ -395,7 +391,10 @@ int pgread(
 #ifdef IODUMP
   printf("read region=%d offset=%d value=%d\n", source, offset, data);
 #ifdef PAGETBL_DUMP
-  print_pgtbl(proc, 0, 1024); //print max TBL
+    printf("Data segment\n");
+    print_pgtbl(proc, proc->mm->mmap->vm_start, proc->mm->mmap->sbrk); 
+    printf("Heap segment\n");
+    print_pgtbl(proc, proc->mm->mmap->vm_next->sbrk, proc->mm->mmap->vm_next->vm_start+1);
 #endif
   // printf("---------------Memphy dump-----------------\n");
   // MEMPHY_dump(proc->mram);
@@ -439,7 +438,10 @@ int pgwrite(
   #ifdef IODUMP
     printf("write region=%d offset=%d value=%d\n", destination, offset, data);
   #ifdef PAGETBL_DUMP
-    print_pgtbl(proc, 0, 1024); //print max TBL
+    printf("Data segment\n");
+    print_pgtbl(proc, proc->mm->mmap->vm_start, proc->mm->mmap->sbrk); 
+    printf("Heap segment\n");
+    print_pgtbl(proc, proc->mm->mmap->vm_next->sbrk, proc->mm->mmap->vm_next->vm_start+1);
   #endif
     // printf("---------------Memphy dump-----------------\n");
     // MEMPHY_dump(proc->mram);
