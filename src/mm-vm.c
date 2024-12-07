@@ -114,7 +114,10 @@ int __alloc(struct pcb_t *caller, int vmaid, int rgid, int size, int *alloc_addr
   /* TODO INCREASE THE LIMIT
    * inc_vma_limit(caller, vmaid, inc_sz)
    */
-  inc_vma_limit(caller, vmaid, size, &inc_limit_ret);
+  if (inc_vma_limit(caller, vmaid, size, &inc_limit_ret) != 0)
+  {
+    return -1;
+  }
 
   /* TODO: commit the limit increment */
   if (vmaid == 0)
@@ -548,7 +551,7 @@ int inc_vma_limit(struct pcb_t *caller, int vmaid, int inc_sz, int* inc_limit_re
   if (vm_map_ram(caller, vmaid ,area->rg_start, area->rg_end, 
                     old_end, incnumpage , newrg) < 0)
     return -1; /* Map the memory to MEMRAM */
-    
+
   if (vmaid == 0)
   {
     cur_vma->sbrk += inc_amt;
