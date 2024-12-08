@@ -66,7 +66,12 @@ struct vm_rg_struct *get_symrg_byid(struct mm_struct *mm, int rgid)
 {
   if(rgid < 0 || rgid > PAGING_MAX_SYMTBL_SZ)
     return NULL;
-
+  if (mm->symrgtbl[rgid].vmaid == 0 && 
+      mm->symrgtbl[rgid].rg_start >= mm->symrgtbl[rgid].rg_end)
+    return NULL;
+  if (mm->symrgtbl[rgid].vmaid == 1 && 
+      mm->symrgtbl[rgid].rg_start <= mm->symrgtbl[rgid].rg_end)
+    return NULL;
   return &mm->symrgtbl[rgid];
 }
 
@@ -199,11 +204,20 @@ int __free(struct pcb_t *caller, int rgid)
     return -1;
 
   rgnode = get_symrg_byid(caller->mm, rgid);
-  
+  if (rgnode == NULL)
+  {
+    printf("Invalid memory region identify \n");
+    return -1;
+  }
+    
   /* TODO: Manage the collect freed region to freerg_list */
   
   /*enlist the obsoleted memory region */
   enlist_vm_freerg_list(caller->mm, rgnode);
+  printf("Data segment:\n");
+  print_list_rg(caller->mm->mmap->vm_freerg_list);
+  printf("Heap segment:\n");
+  print_list_rg(caller->mm->mmap->vm_next->vm_freerg_list);
   // DEBUG
   // print_pgtbl(caller, 0, -1);
   return 0;
@@ -217,9 +231,23 @@ int __free(struct pcb_t *caller, int rgid)
 int pgalloc(struct pcb_t *proc, uint32_t size, uint32_t reg_index)
 {
   int addr;
-  // printf("pgalloc\n"); //DEBUG
+  printf("-------PID: %d - Instruction: ALLOC %d %d -------\n", proc->pid, size, reg_index); //DEBUG
   /* By default using vmaid = 0 */
-  return __alloc(proc, 0, reg_index, size, &addr);
+  if (__alloc(proc, 0, reg_index, size, &addr) != 0)
+  {
+    printf("Cannot allocate memory\n");
+    return -1;
+  }
+  printf("Allocated at region %d - rg_start: %d - rg_end: %d \n", 
+        reg_index, proc->mm->symrgtbl[reg_index].rg_start, 
+        proc->mm->symrgtbl[reg_index].rg_end);
+  printf("Data segment\n");
+  print_pgtbl(proc, proc->mm->mmap->vm_start, proc->mm->mmap->sbrk); 
+  print_list_rg(proc->mm->mmap->vm_freerg_list);
+  printf("Heap segment\n");
+  print_pgtbl(proc, proc->mm->mmap->vm_next->sbrk, proc->mm->mmap->vm_next->vm_start+1);
+  print_list_rg(proc->mm->mmap->vm_next->vm_freerg_list);
+  return 0;
 }
 
 /*pgmalloc - PAGING-based allocate a region memory
@@ -230,9 +258,23 @@ int pgalloc(struct pcb_t *proc, uint32_t size, uint32_t reg_index)
 int pgmalloc(struct pcb_t *proc, uint32_t size, uint32_t reg_index)
 {
   int addr;
-  // printf("pgmalloc\n"); //DEBUG
+  printf("-------PID: %d - Instruction: MALLOC %d %d ------- \n", proc->pid, size, reg_index); //DEBUG
   /* By default using vmaid = 1 */
-  return __alloc(proc, 1, reg_index, size, &addr);
+  if (__alloc(proc, 1, reg_index, size, &addr) != 0)
+  {
+    printf("Cannot allocate memory\n");
+    return -1;
+  }
+  printf("Allocated at region %d - rg_start:%d - rg_end:%d \n", 
+        reg_index, proc->mm->symrgtbl[reg_index].rg_start, 
+        proc->mm->symrgtbl[reg_index].rg_end);
+  printf("Data segment\n");
+  print_pgtbl(proc, proc->mm->mmap->vm_start, proc->mm->mmap->sbrk); 
+  print_list_rg(proc->mm->mmap->vm_freerg_list);
+  printf("Heap segment\n");
+  print_pgtbl(proc, proc->mm->mmap->vm_next->sbrk, proc->mm->mmap->vm_next->vm_start+1);
+  print_list_rg(proc->mm->mmap->vm_next->vm_freerg_list);
+  return 0;
 }
 
 /*pgfree - PAGING-based free a region memory
@@ -243,7 +285,7 @@ int pgmalloc(struct pcb_t *proc, uint32_t size, uint32_t reg_index)
 
 int pgfree_data(struct pcb_t *proc, uint32_t reg_index)
 {
-  // printf("pgfree\n"); //DEBUG
+  printf("-------PID: %d - Instruction: FREE %d -------\n", proc->pid, reg_index); //DEBUG
   return __free(proc, reg_index);
 }
 
@@ -259,7 +301,7 @@ int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller)
   uint32_t pte = mm->pgd[pgn];
   if (!PAGING_PTE_PAGE_PRESENT(pte))
   { /* Page is not online, make it actively living */
-    int vicpgn, swpfpn; 
+    int vicpgn; 
     int vicfpn;
     // printf("Page %d is not online\n", pgn); //DEBUG
     int tgtfpn = PAGING_PTE_SWP(pte);//the target frame storing our variable
@@ -284,7 +326,7 @@ int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller)
     enlist_pgn_node(&caller->mm->fifo_pgn,pgn);
   }
 
-  *fpn = PAGING_PTE_FPN(pte);
+  *fpn = PAGING_PTE_FPN(mm->pgd[pgn]);
 
   return 0;
 }
@@ -332,7 +374,6 @@ int pg_setval(struct mm_struct *mm, int addr, BYTE value, struct pcb_t *caller)
   /* Get the page to MEMRAM, swap from MEMSWAP if needed */
   if(pg_getpage(mm, pgn, &fpn, caller) != 0) 
     return -1; /* invalid page access */
-
   int phyaddr = (fpn << PAGING_ADDR_FPN_LOBIT) + off;
   pthread_mutex_lock(&ram_lock);
   MEMPHY_write(caller->mram,phyaddr, value);
@@ -351,12 +392,20 @@ int pg_setval(struct mm_struct *mm, int addr, BYTE value, struct pcb_t *caller)
 int __read(struct pcb_t *caller, int rgid, int offset, BYTE *data)
 {
   struct vm_rg_struct *currg = get_symrg_byid(caller->mm, rgid);
+  if (currg == NULL)
+  {
+    printf("Invalid memory region identify\n");
+    return -1;
+  }
   int vmaid = currg->vmaid;
 
   struct vm_area_struct *cur_vma = get_vma_by_num(caller->mm, vmaid);
 
-  if(currg == NULL || cur_vma == NULL) /* Invalid memory identify */
-	  return -1;
+  if(cur_vma == NULL) /* Invalid memory identify */
+	{
+    printf("Invalid memory area dentify\n");
+    return -1;
+  }
 
   pg_getval(caller->mm, currg->rg_start + offset, data, caller);
 
@@ -372,7 +421,9 @@ int pgread(
 		uint32_t destination) 
 {
   BYTE data;
-  int val = __read(proc, source, offset, &data);
+  printf("-------PID: %d - Instruction: READ %d %d %d -------\n", proc->pid, source, offset, destination); //DEBUG
+  if (__read(proc, source, offset, &data) != 0)
+    return -1;
   destination = (uint32_t) data;
 #ifdef IODUMP
   printf("read region=%d offset=%d value=%d\n", source, offset, data);
@@ -385,7 +436,7 @@ int pgread(
   MEMPHY_dump(proc->mram);
 #endif
 
-  return val;
+  return 0;
 }
 
 /*__write - write a region memory
@@ -399,10 +450,18 @@ int pgread(
 int __write(struct pcb_t *caller, int rgid, int offset, BYTE value)
 {
   struct vm_rg_struct *currg = get_symrg_byid(caller->mm, rgid);
+  if (currg == NULL)
+  {
+    printf("Invalid memory region identify\n");
+    return -1;
+  }
   int vmaid = currg->vmaid;
   struct vm_area_struct *cur_vma = get_vma_by_num(caller->mm, vmaid);
-  if(currg == NULL || cur_vma == NULL) /* Invalid memory identify */
-	  return -1;
+  if(cur_vma == NULL) /* Invalid memory identify */
+	{
+    printf("Invalid memory area identify\n");
+    return -1;
+  }  
   pg_setval(caller->mm, currg->rg_start + offset, value, caller);
   return 0;
 }
@@ -414,6 +473,10 @@ int pgwrite(
 		uint32_t destination, // Index of destination register
 		uint32_t offset)
 {
+  printf("-------PID: %d - Instruction: WRITE %d %d %d -------\n", proc->pid, data, destination, offset); //DEBUG
+  if (__write(proc, destination, offset, data) != 0){
+    return -1;
+  }
   #ifdef IODUMP
     printf("write region=%d offset=%d value=%d\n", destination, offset, data);
   #ifdef PAGETBL_DUMP
@@ -424,7 +487,7 @@ int pgwrite(
   #endif
     MEMPHY_dump(proc->mram);
   #endif
-  return __write(proc, destination, offset, data);
+  return 0;
 
 }
 
@@ -605,7 +668,6 @@ int find_victim_page(struct mm_struct *mm, int *retpgn)
 int get_free_vmrg_area(struct pcb_t *caller, int vmaid, int size, struct vm_rg_struct *newrg)
 {
   struct vm_area_struct *cur_vma = get_vma_by_num(caller->mm, vmaid);
-
   struct vm_rg_struct *rgit = cur_vma->vm_freerg_list;
 
   if (rgit == NULL)
@@ -617,91 +679,47 @@ int get_free_vmrg_area(struct pcb_t *caller, int vmaid, int size, struct vm_rg_s
   /* Traverse on list of free vm region to find a fit space */
   while (rgit != NULL && rgit->vmaid == vmaid)
   {
-    if (vmaid == 0) // data segment
+    if ((vmaid == 0 && rgit->rg_start + size - 1 <= rgit->rg_end) || 
+        (vmaid == 1 && rgit->rg_start - size + 1 >= rgit->rg_end))
     { 
-      if (rgit->rg_start + size - 1 <= rgit->rg_end)
-      { /* Current region has enough space */
-        newrg->rg_start = rgit->rg_start;
-        newrg->rg_end = rgit->rg_start + size - 1;
+      /* Current region has enough space */
+      newrg->rg_start = rgit->rg_start;
+      newrg->rg_end = (vmaid == 0) ? rgit->rg_start + size - 1 : rgit->rg_start - size + 1;
 
-        /* Update left space in chosen region */
-        if (rgit->rg_start + size < rgit->rg_end)
-        {
-          rgit->rg_start = rgit->rg_start + size;
-        }
-        else
-        { /*Use up all space, remove current node */
-          /*Clone next rg node */
-          struct vm_rg_struct *nextrg = rgit->rg_next;
-
-          /*Cloning */
-          if (nextrg != NULL)
-          {
-            rgit->rg_start = nextrg->rg_start;
-            rgit->rg_end = nextrg->rg_end;
-
-            rgit->rg_next = nextrg->rg_next;
-
-            free(nextrg);
-          }
-          else
-          { /*End of free list */
-            rgit->rg_start = rgit->rg_end;	//dummy, size 0 region
-            rgit->rg_next = NULL;
-          }
-        }
+      /* Update left space in chosen region */
+      if ((vmaid == 0 && rgit->rg_start + size < rgit->rg_end) || 
+          (vmaid == 1 && rgit->rg_start - size > rgit->rg_end))
+      {
+        rgit->rg_start = (vmaid == 0) ? rgit->rg_start + size : rgit->rg_start - size;
       }
       else
-      {
-        rgit = rgit->rg_next;	// Traverse next rg
-      }
-    }
-    else if (vmaid == 1) //heap segment
-    {
-      if (rgit->rg_start - size + 1>= rgit->rg_end)
-      { /* Current region has enough space */
-        newrg->rg_start = rgit->rg_start;
-        newrg->rg_end = rgit->rg_start - size + 1;
+      { 
+        /* Use up all space, remove current node */
+        struct vm_rg_struct *nextrg = rgit->rg_next;
 
-        /* Update left space in chosen region */
-        if (rgit->rg_start - size > rgit->rg_end)
+        if (nextrg != NULL)
         {
-          rgit->rg_start = rgit->rg_start - size;
+          rgit->rg_start = nextrg->rg_start;
+          rgit->rg_end = nextrg->rg_end;
+          rgit->rg_next = nextrg->rg_next;
+          free(nextrg);
         }
         else
-        { /*Use up all space, remove current node */
-          /*Clone next rg node */
-          struct vm_rg_struct *nextrg = rgit->rg_next;
-
-          /*Cloning */
-          if (nextrg != NULL)
-          {
-            rgit->rg_start = nextrg->rg_start;
-            rgit->rg_end = nextrg->rg_end;
-
-            rgit->rg_next = nextrg->rg_next;
-
-            free(nextrg);
-          }
-          else
-          { /*End of free list */
-            rgit->rg_start = rgit->rg_end;	//dummy, size 0 region
-            rgit->rg_next = NULL;
-          }
+        { 
+          /* End of free list */
+          rgit->rg_start = rgit->rg_end; // dummy, size 0 region
+          rgit->rg_next = NULL;
         }
       }
-      else
-      {
-        rgit = rgit->rg_next;	// Traverse next rg
-      }
+      break;
     }
-    else ; // Invalid vmaid                                               
+    rgit = rgit->rg_next; // Traverse next rg
   }
-  // printf("new region not found in free list\n"); //DEBUG 
-  if (newrg->rg_start == -1) // new region not found
-   return -1;
 
- return 0;
+  if (newrg->rg_start == -1) // new region not found
+    return -1;
+
+  return 0;
 }
 
 //#endif

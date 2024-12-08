@@ -317,8 +317,9 @@ int init_mm(struct mm_struct *mm, struct pcb_t *caller)
   vma0->vm_start = 0;
   vma0->vm_end = caller -> vmemsz ;
   vma0->sbrk = vma0->vm_start;
-  struct vm_rg_struct *first_rg_vma0 = init_vm_rg(vma0->vm_start, vma0->sbrk, 0);
-  enlist_vm_rg_node(&vma0->vm_freerg_list, first_rg_vma0);
+  // struct vm_rg_struct *first_rg_vma0 = init_vm_rg(vma0->vm_start, vma0->sbrk, 0);
+  // enlist_vm_rg_node(&vma0->vm_freerg_list, first_rg_vma0);
+  vma0 -> vm_freerg_list = NULL;
 
   /* TODO update VMA0 next */
   vma0->vm_next = vma1;
@@ -328,9 +329,10 @@ int init_mm(struct mm_struct *mm, struct pcb_t *caller)
   vma1->vm_start = caller -> vmemsz - 1;
   vma1->vm_end = -1;
   vma1->sbrk = vma1->vm_start;
-  struct vm_rg_struct *first_rg_vma1 = init_vm_rg(vma1->vm_start, vma1->sbrk, 1);
   vma1->vm_next = NULL;
-  enlist_vm_rg_node(&vma1->vm_freerg_list,first_rg_vma1);
+  // struct vm_rg_struct *first_rg_vma1 = init_vm_rg(vma1->vm_start, vma1->sbrk, 1);
+  // enlist_vm_rg_node(&vma1->vm_freerg_list,first_rg_vma1);
+  vma1 -> vm_freerg_list = NULL;
 
   /* Point vma owner backward */
   vma0->vm_mm = mm; 
